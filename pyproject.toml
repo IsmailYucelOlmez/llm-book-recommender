@@ -1,0 +1,28 @@
+[project]
+name = "llm-semantic-book-recommender"
+version = "0.1.0"
+description = "Semantic book recommender with a hybrid local + Google Books retrieval pipeline (Gemini embeddings)."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [
+    ".venv",
+    "chroma_db",
+    "data",
+    "*.ipynb",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+# Notebook-derived dashboard uses keyword-style spacing; keep it lenient there.
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"modules/test_*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+testpaths = ["modules"]
+addopts = "-q"

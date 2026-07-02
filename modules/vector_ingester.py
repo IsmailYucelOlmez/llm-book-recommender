@@ -3,7 +3,7 @@ import logging
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-from modules.embeddings_utils import embed_with_retry, get_existing_ids
+from modules.embeddings_utils import embed_with_retry, get_collection, get_existing_ids
 from modules.types import BookRecord
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class VectorIngester:
             return []
 
         try:
-            self.db._collection.add(
+            get_collection(self.db).add(
                 ids=[book.isbn13 for book in pending],
                 embeddings=vectors,
                 documents=texts,
@@ -53,7 +53,7 @@ class VectorIngester:
             return 0
 
         try:
-            self.db._collection.delete(ids=to_remove)
+            get_collection(self.db).delete(ids=to_remove)
         except Exception as error:
             logger.warning("Chroma delete failed: %s", error)
             return 0

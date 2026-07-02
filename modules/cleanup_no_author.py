@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 
-import pandas as pd
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings

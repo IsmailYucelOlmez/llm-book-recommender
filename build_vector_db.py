@@ -12,8 +12,9 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+from modules.book_normalizer import parse_tagged_isbn
 from modules.config import CHROMA_DIR, EMBEDDING_MODEL
-from modules.embeddings_utils import embed_with_retry, get_existing_ids
+from modules.embeddings_utils import embed_with_retry, get_collection, get_existing_ids
 
 load_dotenv()
 
@@ -27,7 +28,10 @@ def load_tagged_documents(path="tagged_description.txt"):
 
 
 def document_id(doc: Document) -> str:
-    return doc.page_content.strip('"').split()[0]
+    isbn = parse_tagged_isbn(doc.page_content)
+    if not isbn:
+        raise ValueError(f"Could not parse ISBN from tagged description: {doc.page_content[:80]!r}")
+    return isbn
 
 
 def main():
@@ -52,7 +56,11 @@ def main():
         f"Building vector database in {CHROMA_DIR}: "
         f"{len(existing_ids)} done, {len(pending)} remaining ({total} total)."
     )
-    print(f"Free tier: ~{BATCH_SIZE} docs per batch, {PAUSE_SECONDS}s pause (~{len(pending) // BATCH_SIZE + 1} min estimated).")
+    estimated_minutes = len(pending) // BATCH_SIZE + 1
+    print(
+        f"Free tier: ~{BATCH_SIZE} docs per batch, "
+        f"{PAUSE_SECONDS}s pause (~{estimated_minutes} min estimated)."
+    )
 
     for start in range(0, len(pending), BATCH_SIZE):
         batch = pending[start : start + BATCH_SIZE]
@@ -61,7 +69,7 @@ def main():
         metadatas = [doc.metadata for doc in batch]
 
         vectors = embed_with_retry(embeddings, texts)
-        db._collection.add(ids=ids, embeddings=vectors, documents=texts, metadatas=metadatas)
+        get_collection(db).add(ids=ids, embeddings=vectors, documents=texts, metadatas=metadatas)
 
         done = len(existing_ids) + start + len(batch)
         print(f"Progress: {done}/{total}")

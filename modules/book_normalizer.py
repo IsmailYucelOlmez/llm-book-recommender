@@ -36,6 +36,22 @@ def extract_isbn(identifiers: list[dict[str, str]] | None) -> tuple[str | None, 
     return isbn13, isbn10
 
 
+def parse_tagged_isbn(page_content: str | None) -> str | None:
+    """Extract the leading ISBN token from a tagged-description line.
+
+    Tagged descriptions have the shape ``"<isbn13> <description>"``. Some rows
+    wrap the whole line (or just the description) in double quotes, so we strip
+    those before splitting. Returns ``None`` when no token can be recovered,
+    which lets callers skip malformed lines instead of raising IndexError.
+    """
+    if not page_content:
+        return None
+    tokens = page_content.strip().lstrip('"').split()
+    if not tokens:
+        return None
+    return tokens[0].strip('"') or None
+
+
 def has_valid_authors(authors: list[str] | str | None) -> bool:
     if authors is None:
         return False

@@ -7,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from modules.book_cache import BookCache
-from modules.book_normalizer import normalize_volumes
+from modules.book_normalizer import normalize_volumes, parse_tagged_isbn
 from modules.config import MAX_NEW_BOOKS
 from modules.google_books_client import GoogleBooksClient
 from modules.persistence import append_books_to_csv
@@ -90,7 +90,11 @@ class HybridRecommender:
         else:
             recs = self.db.similarity_search(query, k=initial_top_k)
 
-        books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
+        books_list: list[int] = []
+        for rec in recs:
+            isbn = parse_tagged_isbn(rec.page_content)
+            if isbn and isbn.isdigit():
+                books_list.append(int(isbn))
         book_recs = self.books_df[self.books_df["isbn13"].isin(books_list)].copy()
 
         if category != "All":

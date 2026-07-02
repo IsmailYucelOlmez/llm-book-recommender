@@ -2,7 +2,6 @@ import hashlib
 import json
 import sqlite3
 import time
-from pathlib import Path
 
 from modules.config import CACHE_DB_PATH, QUERY_CACHE_TTL_SECONDS, ensure_data_dir
 from modules.types import BookRecord

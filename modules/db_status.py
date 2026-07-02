@@ -87,18 +87,21 @@ def _load_chroma_google_isbns() -> tuple[int, list[str]]:
     from langchain_chroma import Chroma
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+    from modules.embeddings_utils import get_collection
+
     db = Chroma(
         persist_directory=CHROMA_DIR,
         embedding_function=GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL),
     )
-    total = db._collection.count()
+    collection = get_collection(db)
+    total = collection.count()
     if total == 0:
         return 0, []
 
-    data = db._collection.get(include=["metadatas"])
+    data = collection.get(include=["metadatas"])
     google_ids = [
         book_id
-        for book_id, meta in zip(data["ids"], data["metadatas"])
+        for book_id, meta in zip(data["ids"], data["metadatas"], strict=False)
         if meta.get("source") == "google_books"
     ]
     return total, sorted(google_ids)

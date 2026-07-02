@@ -1,18 +1,29 @@
+import logging
+import os
 from pathlib import Path
 
-import pandas as pd
+import gradio as gr
 import numpy as np
+import pandas as pd
 from dotenv import load_dotenv
-
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
 
-import gradio as gr
-
+from modules.config import MAX_QUERY_LENGTH
 from modules.hybrid_recommender import HybridRecommender
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
+
+if not os.getenv("GOOGLE_BOOKS_API_KEY"):
+    logger.warning(
+        "GOOGLE_BOOKS_API_KEY is not set. The 'Advanced' search mode will use the "
+        "Google Books API with a low anonymous quota, which can cause silent "
+        "rate-limit failures. See .env.example."
+    )
 
 CHROMA_DIR = "chroma_db"
 EMBEDDING_MODEL = "models/gemini-embedding-001"
@@ -75,9 +86,22 @@ def recommend_books(
         tone: str,
         search_mode: str,
 ):
+    query = (query or "").strip()
+    if not query:
+        gr.Warning("Please enter a description of a book before searching.")
+        return []
+    if len(query) > MAX_QUERY_LENGTH:
+        gr.Warning(
+            f"Your description was longer than {MAX_QUERY_LENGTH} characters and "
+            "has been shortened for the search."
+        )
+        query = query[:MAX_QUERY_LENGTH]
+
     recommendations = retrieve_semantic_recommendations(
         query, category, tone, search_mode
     )
+    if recommendations.empty:
+        gr.Info("No matching books found. Try a different description or search mode.")
     results = []
 
     for _, row in recommendations.iterrows():

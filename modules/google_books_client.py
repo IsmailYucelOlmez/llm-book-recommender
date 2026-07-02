@@ -19,6 +19,11 @@ class GoogleBooksClient:
     def __init__(self, api_key: str | None = None, timeout: int = GOOGLE_BOOKS_TIMEOUT_SECONDS):
         self.api_key = api_key if api_key is not None else os.getenv("GOOGLE_BOOKS_API_KEY")
         self.timeout = timeout
+        if not self.api_key:
+            logger.warning(
+                "GoogleBooksClient running without an API key; requests use the low "
+                "anonymous quota and may be silently rate-limited. Set GOOGLE_BOOKS_API_KEY."
+            )
 
     def search(self, query: str, max_results: int = GOOGLE_BOOKS_MAX_RESULTS) -> list[dict[str, Any]]:
         query = query.strip()
