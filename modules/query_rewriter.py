@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, field_validator
 from modules.config import (
     MAX_GOOGLE_BOOKS_QUERIES,
     MAX_REWRITE_QUERY_CHARS,
+    REWRITE_MAX_OUTPUT_TOKENS,
     REWRITE_MAX_RETRIES,
     REWRITE_MODEL,
+    REWRITE_THINKING_BUDGET,
     REWRITE_TIMEOUT_SECONDS,
 )
 
@@ -124,6 +126,8 @@ class QueryRewriter:
             temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
+            max_output_tokens=REWRITE_MAX_OUTPUT_TOKENS,
+            thinking_budget=REWRITE_THINKING_BUDGET,
         )
         self._structured = self._llm.with_structured_output(RewriteResult)
 

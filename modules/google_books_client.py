@@ -1,5 +1,6 @@
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
@@ -54,16 +55,33 @@ class GoogleBooksClient:
         return [item.get("volumeInfo", {}) for item in items if item.get("volumeInfo")]
 
     def search_many(self, queries: list[str], max_results: int = GOOGLE_BOOKS_MAX_RESULTS) -> list[dict[str, Any]]:
+        unique_queries = [query.strip() for query in queries if query.strip()]
+        if not unique_queries:
+            return []
+        if len(unique_queries) == 1:
+            return self.search(unique_queries[0], max_results=max_results)
+
         merged: list[dict[str, Any]] = []
         seen_keys: set[str] = set()
 
-        for query in queries:
-            for volume in self.search(query, max_results=max_results):
-                dedupe_key = self._volume_dedupe_key(volume)
-                if dedupe_key in seen_keys:
+        with ThreadPoolExecutor(max_workers=len(unique_queries)) as executor:
+            futures = {
+                executor.submit(self.search, query, max_results): query
+                for query in unique_queries
+            }
+            for future in as_completed(futures):
+                try:
+                    volumes = future.result()
+                except Exception as error:
+                    logger.warning("Google Books parallel search failed: %s", error)
                     continue
-                seen_keys.add(dedupe_key)
-                merged.append(volume)
+
+                for volume in volumes:
+                    dedupe_key = self._volume_dedupe_key(volume)
+                    if dedupe_key in seen_keys:
+                        continue
+                    seen_keys.add(dedupe_key)
+                    merged.append(volume)
 
         return merged
 

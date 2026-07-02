@@ -4,9 +4,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 from modules.book_cache import BookCache
 from modules.google_books_client import GoogleBooksClient
+from modules.persistence import append_books_to_csv
 from modules.query_rewriter import QueryRewriter, RewriteResult, _extract_json_payload
+from modules.types import BookRecord
 
 
 class RewriteResultTests(unittest.TestCase):
@@ -108,6 +112,64 @@ class GoogleBooksClientTests(unittest.TestCase):
         self.assertEqual(len(volumes), 2)
         titles = {volume["title"] for volume in volumes}
         self.assertEqual(titles, {"Example Book", "Another Book"})
+
+
+class PersistenceBatchTests(unittest.TestCase):
+    def test_append_books_to_csv_writes_once(self) -> None:
+        books_df = pd.DataFrame(
+            {
+                "isbn13": [111],
+                "isbn10": ["0111"],
+                "title": ["Existing"],
+                "authors": ["Author One"],
+                "categories": ["Fiction"],
+                "thumbnail": [""],
+                "description": ["Existing description"],
+                "tagged_description": ['111 "Existing description"'],
+                "simple_categories": ["Fiction"],
+                "source": ["local"],
+            }
+        )
+        books = [
+            BookRecord(
+                isbn13="222",
+                isbn10="0222",
+                title="New Book",
+                authors="Author Two",
+                description="A long enough description for batch CSV persistence testing.",
+                thumbnail=None,
+                categories="Fiction",
+                tagged_description='222 "A long enough description for batch CSV persistence testing."',
+                source="google_books",
+                simple_categories="Fiction",
+            ),
+            BookRecord(
+                isbn13="333",
+                isbn10="0333",
+                title="Another Book",
+                authors="Author Three",
+                description="Another long enough description for batch CSV persistence testing.",
+                thumbnail=None,
+                categories="Fiction",
+                tagged_description='333 "Another long enough description for batch CSV persistence testing."',
+                source="google_books",
+                simple_categories="Fiction",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "books.csv")
+            tagged_path = os.path.join(tmp_dir, "tagged.txt")
+            with patch("modules.persistence.BOOKS_CSV_PATH", csv_path), patch(
+                "modules.persistence.TAGGED_DESCRIPTION_PATH", tagged_path
+            ):
+                updated_df = append_books_to_csv(books, books_df)
+
+            self.assertEqual(len(updated_df), 3)
+            saved = pd.read_csv(csv_path)
+            self.assertEqual(len(saved), 3)
+            self.assertIn("222", saved["isbn13"].astype(str).values)
+            self.assertIn("333", saved["isbn13"].astype(str).values)
 
 
 if __name__ == "__main__":

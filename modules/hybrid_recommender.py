@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,7 @@ from modules.book_cache import BookCache
 from modules.book_normalizer import normalize_volumes
 from modules.config import MAX_NEW_BOOKS
 from modules.google_books_client import GoogleBooksClient
-from modules.persistence import append_book_to_csv
+from modules.persistence import append_books_to_csv
 from modules.query_rewriter import QueryRewriter, RewriteResult
 from modules.types import BookRecord
 from modules.vector_ingester import VectorIngester
@@ -54,10 +55,10 @@ class HybridRecommender:
         fetch_external: bool = True,
     ) -> pd.DataFrame:
         search_query = query.strip()
-        rewrite_result: RewriteResult | None = None
+        query_vector: list[float] | None = None
 
         if fetch_external and search_query:
-            rewrite_result = self._fetch_and_ingest(
+            rewrite_result, query_vector = self._fetch_and_ingest(
                 query,
                 max_new_books,
                 category,
@@ -66,7 +67,14 @@ class HybridRecommender:
             if rewrite_result:
                 search_query = rewrite_result.effective_local_query(query)
 
-        return self._local_search(search_query, category, tone, initial_top_k, final_top_k)
+        return self._local_search(
+            search_query,
+            category,
+            tone,
+            initial_top_k,
+            final_top_k,
+            query_vector=query_vector,
+        )
 
     def _local_search(
         self,
@@ -75,8 +83,13 @@ class HybridRecommender:
         tone: str,
         initial_top_k: int,
         final_top_k: int,
+        query_vector: list[float] | None = None,
     ) -> pd.DataFrame:
-        recs = self.db.similarity_search(query, k=initial_top_k)
+        if query_vector is not None:
+            recs = self.db.similarity_search_by_vector(query_vector, k=initial_top_k)
+        else:
+            recs = self.db.similarity_search(query, k=initial_top_k)
+
         books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
         book_recs = self.books_df[self.books_df["isbn13"].isin(books_list)].copy()
 
@@ -109,25 +122,45 @@ class HybridRecommender:
         max_new_books: int,
         category: str = "All",
         tone: str = "All",
-    ) -> RewriteResult | None:
+    ) -> tuple[RewriteResult | None, list[float] | None]:
         if not query.strip():
-            return None
+            return None, None
 
         cached = self.cache.get_query_cache(query, category)
         if cached is not None:
             cached_isbns, cached_rewrite = cached
             self._books_from_cache(cached_isbns, category)
-            return QueryRewriter.from_cache_dict(cached_rewrite)
+            rewrite_result = QueryRewriter.from_cache_dict(cached_rewrite)
+            return rewrite_result, None
 
-        rewrite_result = self.query_rewriter.rewrite(query, category=category, tone=tone)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            rewrite_future = executor.submit(
+                self.query_rewriter.rewrite,
+                query,
+                category,
+                tone,
+            )
+            existing_isbns_future = executor.submit(self._existing_isbn_set)
+            rewrite_result = rewrite_future.result()
+            existing_isbns = existing_isbns_future.result()
+
         api_queries = (
             rewrite_result.effective_api_queries(query)
             if rewrite_result
             else [query.strip()]
         )
+        local_query = (
+            rewrite_result.effective_local_query(query)
+            if rewrite_result
+            else query.strip()
+        )
 
-        existing_isbns = self._existing_isbn_set()
-        volumes = self.google_client.search_many(api_queries)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            volumes_future = executor.submit(self.google_client.search_many, api_queries)
+            query_vector_future = executor.submit(self._embed_query, local_query)
+            volumes = volumes_future.result()
+            query_vector = query_vector_future.result()
+
         books = normalize_volumes(
             volumes,
             existing_isbns,
@@ -141,12 +174,14 @@ class HybridRecommender:
 
         if not books:
             self.cache.set_query_isbns(query, [], category, rewrite=rewrite_cache)
-            return rewrite_result
+            return rewrite_result, query_vector
 
         ingested = self.ingester.ingest_books(books)
         for book in ingested:
             self.cache.set_book(book)
-            self.books_df = append_book_to_csv(book, self.books_df)
+
+        if ingested:
+            self.books_df = append_books_to_csv(ingested, self.books_df)
 
         self.cache.set_query_isbns(
             query,
@@ -154,7 +189,17 @@ class HybridRecommender:
             category,
             rewrite=rewrite_cache,
         )
-        return rewrite_result
+        return rewrite_result, query_vector
+
+    def _embed_query(self, query: str) -> list[float] | None:
+        query = query.strip()
+        if not query:
+            return None
+        try:
+            return self.embeddings.embed_query(query)
+        except Exception as error:
+            logger.warning("Query embedding failed for %r: %s", query[:80], error)
+            return None
 
     def _books_from_cache(self, isbns: list[str], category: str) -> list[BookRecord]:
         books: list[BookRecord] = []
