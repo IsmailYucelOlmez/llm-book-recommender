@@ -1,0 +1,20 @@
+# Core dependencies for the Gradio dashboard (Gemini API)
+pandas
+numpy
+python-dotenv
+langchain-community
+langchain-chroma
+langchain-google-genai
+langchain-text-splitters
+gradio
+kagglehub
+requests
+
+# Optional: for running the Jupyter notebooks (classification & sentiment)
+# transformers
+# torch
+# matplotlib
+# seaborn
+# notebook
+# ipywidgets
+# tqdm
